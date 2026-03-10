@@ -1,9 +1,8 @@
 ---
 description: Roku SceneGraph XML component structure, patterns, and best practices
-globs: components/**/*.xml
+globs: *.xml
 alwaysApply: false
 ---
-
 # SceneGraph XML Component Rules
 
 ## Component Structure

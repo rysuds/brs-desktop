@@ -1,0 +1,131 @@
+---
+description: Common BrightScript pitfalls, crash causes, and defensive coding patterns for Roku development
+globs: **/*.brs
+alwaysApply: false
+---
+
+# BrightScript Pitfalls & Crash Prevention
+
+## Invalid / Uninitialized Access (Most Common Crash)
+
+The #1 cause of BrightScript crashes is accessing a member on `invalid`. Always guard:
+
+```brightscript
+' CRASH — if getItem() returns invalid, .title dereferences invalid
+title = getItem().title
+
+' SAFE
+item = getItem()
+if item <> invalid
+    title = item.title
+end if
+```
+
+- `findNode()` returns `invalid` if the ID doesn't exist — always check the result.
+- Chained dot access (`a.b.c.d`) is dangerous; any link being `invalid` crashes the app.
+- Content fields from `ContentNode` may be unset — use `hasField()` or provide defaults.
+
+## Type Mismatch Crashes
+
+BrightScript has no implicit type coercion between incompatible types:
+
+```brightscript
+' CRASH — cannot add string and integer
+result = "Count: " + 5
+
+' SAFE
+result = "Count: " + Str(5)
+result = "Count: " + 5.ToStr()
+```
+
+- Arithmetic on `invalid` crashes. Validate before math: `if value <> invalid and type(value) = "Integer"`.
+- Comparing mismatched types (e.g., `String` vs `Integer`) crashes — normalize types first.
+- `Val()` returns 0 on non-numeric strings but crashes on `invalid` — check before calling.
+- Passing wrong argument types to a function crashes at call site with no helpful stack trace.
+
+## Array / Index Out of Bounds
+
+```brightscript
+' CRASH — index beyond array length
+items = ["a", "b", "c"]
+value = items[5]
+
+' SAFE — bounds check
+if index >= 0 and index < items.Count()
+    value = items[index]
+end if
+```
+
+- `roArray` does not auto-expand on read. Writing beyond bounds silently extends, but reading does not.
+- `for i = 0 to items.Count()` is off-by-one — use `items.Count() - 1`.
+- Mutating an array (`.Delete()`, `.Push()`) while iterating with `for each` causes undefined behavior.
+
+## Node / Component Lifecycle
+
+- Accessing a node after `removeChild()` or setting its parent to `invalid` crashes if you still hold a reference.
+- `getParent()` returns `invalid` inside `init()` — do not navigate the tree upward during initialization.
+- `createObject("roSGNode", "TypeName")` returns `invalid` if the component XML has errors — always check.
+- Calling `setFocus(true)` on a node not in the scene tree is a silent no-op, leaving the UI unresponsive.
+
+## Observer & Callback Pitfalls
+
+- Using `observeField` instead of `observeFieldScoped` leaks observers. Leaked observers accumulate and fire on destroyed components, causing crashes.
+- Observer callbacks receive an `roSGNodeEvent` — calling `getData()` on it can return `invalid` if the field was cleared before the callback fires.
+- Setting a field inside its own observer creates an infinite loop that freezes the render thread.
+- Observing fields on nodes from a different thread context (e.g., render thread observing a task field with a callback) triggers excessive Rendezvous.
+
+## Task Thread Crashes
+
+- Any unhandled error in a Task thread silently kills that task — the `state` field changes to `"stop"` with no visible error unless you're watching the debug console.
+- `sleep()` in a task with `0` or negative value causes undefined behavior — always use positive values.
+- Calling SceneGraph node functions (e.g., `appendChild`, `removeChild`) from a Task thread crashes. Only read/write fields — never call node methods.
+- Forgetting to set `functionName` before setting `control = "run"` crashes the task immediately.
+
+## String Handling
+
+- `Mid()`, `Left()`, `Right()` with out-of-range indices crash rather than returning a truncated result. Clamp indices to `Len(str)`.
+- `Instr()` returns 0 (not -1) when the substring is not found. Index 0 also means "found at position 0" — this ambiguity causes logic bugs.
+- String concatenation in tight loops creates massive GC pressure. Build an array and `join()` for bulk string assembly.
+
+## Network & I/O
+
+- `roUrlTransfer.GetToString()` blocks the calling thread. Never call it on the render thread — use an async pattern with a Task.
+- Forgetting to call `SetCertificatesFile("common:/certs/ca-bundle.crt")` before HTTPS requests causes silent failures (empty response, no crash).
+- Not setting `EnableEncodings(true)` means gzip responses arrive as raw compressed bytes, parsed as garbage.
+- File operations (`ReadAsciiFile`, `WriteAsciiFile`) return empty string or `false` on failure, not exceptions — always check return values.
+- `cachefs:/` has limited space (~256KB–1MB depending on device). Writing large files silently fails.
+
+## Memory & Performance Traps
+
+- Roku devices have limited RAM (512MB–2GB). Large image arrays or unbounded caches cause `EXIT_OUT_OF_MEMORY`.
+- Bitmaps not visible on screen still consume texture memory. Set `uri = ""` or remove poster nodes when off-screen.
+- Creating many nodes dynamically without removing old ones leaks memory. Use object pools or `MarkupGrid`/`RowList` for large lists.
+- `Eval()` recompiles on every call. Never use it in loops or frequently called functions.
+- `roRegex.Match()` compiles the pattern each time if you create a new `roRegex` per call. Cache the `roRegex` object.
+
+## Focus & Key Handling
+
+- If no node has focus, the remote becomes unresponsive. Always ensure *something* has focus after any screen transition or dialog dismissal.
+- `onKeyEvent` must return `true` when handling a key, otherwise the event bubbles up and may trigger unintended behavior in parent components.
+- Returning `true` for the "back" key without providing an alternative exit path traps the user — Roku certification will reject this.
+- Rapid key presses can queue multiple `onKeyEvent` calls. Guard state transitions to avoid double-navigation.
+
+## Conditional Compilation & Platform
+
+- `#if` / `#else` / `#end if` constants come from `bs_const` in the manifest. Referencing an undefined constant is a compile-time error that prevents the app from launching.
+- Firmware version checks via `roDeviceInfo.GetVersion()` return a string, not a number. String comparison works for major versions but breaks for minor version comparisons (e.g., `"9.4" > "9.30"` is `true` because of lexicographic ordering). Parse version segments as integers.
+
+## Defensive Coding Checklist
+
+Before shipping, verify:
+
+1. Every `findNode()` result is checked against `invalid`
+2. Every network response is validated before field access
+3. No `STOP` statements remain in code
+4. No blocking calls exist on the render thread
+5. All observers use `observeFieldScoped`, not `observeField`
+6. Array indices are bounds-checked
+7. All `for each` loops handle empty collections
+8. Focus is explicitly set after every screen transition
+9. Task `functionName` is set before `control = "run"`
+10. String-to-number conversions guard against `invalid` input
