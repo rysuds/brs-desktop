@@ -10,3 +10,4 @@ Thumbs.db
 
 # ignore everything in 'app' folder what had been generated from 'src' folder
 /app
+/clips
