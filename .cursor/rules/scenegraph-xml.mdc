@@ -1,0 +1,96 @@
+---
+description: Roku SceneGraph XML component structure, patterns, and best practices
+globs: components/**/*.xml
+alwaysApply: false
+---
+
+# SceneGraph XML Component Rules
+
+## Component Structure
+
+Every XML component must follow this structure order:
+
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<component name="MyComponent" extends="Group">
+  <interface>
+    <!-- public fields -->
+  </interface>
+  <script type="text/brightscript" uri="MyComponent.brs" />
+  <children>
+    <!-- child nodes -->
+  </children>
+</component>
+```
+
+- Always specify `extends` — typically `Group`, `Task`, `ContentNode`, or another custom component.
+- Component filenames must match the component `name` attribute.
+- Place all XML components under the `components/` directory.
+
+## Interface Fields
+
+- Declare all public fields in `<interface>` with explicit types and default values:
+
+```xml
+<!-- BAD: no type, no default -->
+<field id="title" />
+
+<!-- GOOD -->
+<field id="title" type="string" value="" />
+```
+
+- Use `alias` to expose nested child fields to parent components instead of deep node traversal.
+- Use `onChange` to bind observer callbacks directly in XML when appropriate.
+- Valid field types: `string`, `integer`, `float`, `boolean`, `uri`, `node`, `array`, `assocarray`, `vector2d`, `color`, `time`, `nodearray`, `floatarray`, `intarray`.
+
+## Children & Node IDs
+
+- Give meaningful `id` attributes to nodes you need to reference from BrightScript via `findNode()`.
+- Avoid unnecessary `id` attributes on decorative/static nodes.
+- Use layout nodes (`LayoutGroup`, `Rectangle`, `Group`) to structure UI hierarchically.
+- Set `translation`, `itemSize`, `itemSpacing` as arrays `[x, y]`, not strings — type mismatches cause silent failures.
+
+## Script References
+
+- Reference BrightScript files with relative `uri` paths from the component:
+
+```xml
+<script type="text/brightscript" uri="MyComponent.brs" />
+```
+
+- A component may include multiple `<script>` tags for shared utility scripts.
+- Avoid inline `<script>` CDATA blocks in XML; keep logic in separate `.brs` files.
+
+## Initialization Order
+
+Understand and respect the initialization sequence:
+
+1. `<children>` nodes are created with their XML-specified field values
+2. `<interface>` fields are initialized with default or caller-specified values
+3. `init()` is called in the associated BrightScript file
+
+- Observers set in `init()` do NOT fire for initial field values. Call the handler explicitly in `init()` if needed.
+- `getParent()` returns `invalid` inside `init()` — do not rely on parent context during initialization.
+
+## Task Components
+
+- Extend `Task` for all background/async work (network, file I/O, computation).
+- Define `functionName` in the interface or set it in `init()` to specify the entry point.
+- Control tasks via the `control` field: `"run"`, `"stop"`, `"done"`.
+- Design task interfaces with clear input/output fields:
+
+```xml
+<interface>
+  <field id="request" type="assocarray" />
+  <field id="response" type="assocarray" />
+</interface>
+```
+
+- Avoid accessing `m.top` or `m.global` heavily from within task threads — each access triggers a Rendezvous with the render thread.
+- Use port-based `observeFieldScoped("field", m.port)` in task threads instead of callback-based observers.
+
+## Focus Management
+
+- Only one node can have focus at a time. Always call `setFocus(true)` on the intended node after screen transitions.
+- Implement `onKeyEvent(key as String, press as Boolean) as Boolean` to handle remote key presses; return `true` if handled, `false` to propagate.
+- Avoid focus loops — ensure back-navigation always has a clear target.

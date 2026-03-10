@@ -1,0 +1,97 @@
+---
+description: Roku application structure, manifest conventions, threading model, and project-level best practices
+alwaysApply: true
+---
+
+# Roku Application Rules
+
+## Project Structure
+
+Follow the standard Roku app directory layout:
+
+```
+project/
+├── manifest
+├── source/
+│   └── main.brs
+├── components/
+│   ├── MainScene.xml
+│   ├── MainScene.brs
+│   └── screens/
+├── images/
+│   ├── splash_fhd.jpg
+│   ├── splash_hd.jpg
+│   └── channel-poster_hd.png
+└── fonts/  (optional)
+```
+
+- `source/main.brs` must contain `sub Main()` or `sub RunUserInterface()` as the app entry point.
+- All SceneGraph XML components go in `components/` (subdirectories are fine).
+- Static assets go in `images/` and `fonts/`, referenced via `pkg:/images/...` or `pkg:/fonts/...`.
+
+## Manifest File
+
+- Always include required fields: `title`, `major_version`, `minor_version`, `build_version`.
+- Reference splash screens and icons with `pkg:/` paths.
+- Set `ui_resolutions` to declare supported resolutions (e.g., `fhd` for 1080p).
+- Include `bs_const` for conditional compilation flags.
+
+## Entry Point
+
+The standard `main.brs` entry point pattern:
+
+```brightscript
+sub Main(args as Dynamic)
+    screen = CreateObject("roSGScreen")
+    m.port = CreateObject("roMessagePort")
+    screen.setMessagePort(m.port)
+    scene = screen.CreateScene("MainScene")
+    screen.show()
+
+    while true
+        msg = wait(0, m.port)
+        msgType = type(msg)
+        if msgType = "roSGScreenEvent"
+            if msg.isScreenClosed()
+                return
+            end if
+        end if
+    end while
+end sub
+```
+
+## Threading Model
+
+Roku has three thread contexts — understand which you are in:
+
+| Thread | Owns | Access Pattern |
+|--------|------|---------------|
+| Main (app) | `roSGScreen`, message port | Runs `main.brs` event loop |
+| Render | All SceneGraph nodes | Runs `init()`, observers, `onKeyEvent` |
+| Task | Task node's own scope | Runs the function named in `functionName` |
+
+- Never perform blocking operations (network, sleep) on the render thread.
+- Minimize cross-thread field access — each access between Task and Render threads triggers a Rendezvous (synchronous lock).
+- Use `observeFieldScoped` over `observeField` to prevent leaked observers.
+- Cache `m.top` and `m.global` field values in local variables within task threads to reduce Rendezvous calls.
+
+## Resource Paths
+
+| Prefix | Purpose | Writable |
+|--------|---------|----------|
+| `pkg:/` | Read-only bundled resources | No |
+| `tmp:/` | Temporary RAM-based storage, cleared on exit | Yes |
+| `cachefs:/` | Persistent flash storage, survives reboots | Yes |
+
+## Debugging
+
+- Use telnet port `8085` for BrightScript debug console, `8080` for SceneGraph inspector.
+- Use `logrendezvous` in the SceneGraph debug console to identify performance bottlenecks.
+- Profile with `roTimespan` and the Roku Resource Monitor.
+- Remove all `STOP` statements and unguarded `print` calls before packaging for release.
+
+## Deployment
+
+- Package apps as flat-structure `.zip` files (manifest at root, not nested in a subfolder).
+- Sideload via `curl` to the device's developer web interface during development.
+- Sign and encrypt with `genkey` for production deployment.

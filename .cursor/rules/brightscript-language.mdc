@@ -1,0 +1,78 @@
+---
+description: BrightScript language conventions, syntax rules, and best practices for Roku development
+globs: **/*.brs
+alwaysApply: false
+---
+
+# BrightScript Language Rules
+
+## Syntax & Structure
+
+- Use `sub` for procedures with no return value; use `function` when returning a value.
+- Always declare function/sub parameter types and return types explicitly:
+
+```brightscript
+' BAD
+function getTitle(item)
+
+' GOOD
+function getTitle(item as Object) as String
+```
+
+- Use `m` (module scope) for component-level state in SceneGraph scripts. Never shadow `m` with a local variable.
+- Terminate multi-line blocks with their matching keyword: `end sub`, `end function`, `end if`, `end for`, `end while`.
+- Use `print` or `?` only for debugging. Remove or guard with conditional compilation (`#if DEBUG`) before release.
+
+## Variables & Types
+
+- BrightScript is case-insensitive. Use **camelCase** for variables and functions, **PascalCase** for component/class names.
+- Prefer explicit types over `Dynamic` when the type is known. Valid types: `Integer`, `Float`, `Double`, `Boolean`, `String`, `Object`, `Dynamic`, `LongInteger`.
+- Use type suffixes sparingly; prefer typed declarations: `dim scores[10] as Integer` over relying on suffixes like `%`, `!`, `#`, `$`.
+- Initialize variables before use — accessing an uninitialized variable is a runtime error.
+- Use `invalid` checks before accessing object members:
+
+```brightscript
+' BAD
+name = response.name
+
+' GOOD
+if response <> invalid
+    name = response.name
+end if
+```
+
+## Associative Arrays & Data
+
+- Use dot notation for known string keys: `aa.myKey`.
+- Use bracket notation for dynamic keys or keys with special characters: `aa["my-key"]`.
+- Prefer `roAssociativeArray` literal syntax `{}` for creating objects.
+- Use `roArray` literal syntax `[]` for creating arrays.
+- Always check `.Count()` or compare to `invalid` before iterating collections.
+
+## Control Flow
+
+- Prefer `for each item in collection` over index-based `for` loops when iterating arrays.
+- Always include an `else` or default case in conditional chains that handle external data.
+- Avoid deeply nested `if` blocks (max 3 levels). Extract logic into helper functions.
+- Use `return` to exit functions early rather than wrapping entire function bodies in conditionals.
+
+## Error Handling
+
+- Wrap network calls and file I/O in `try/catch` (Roku OS 11.5+) or validate return values.
+- Never silently swallow errors — always log failures with context.
+- Check `GetMessage()`, `GetResponseCode()`, and `GetFailureReason()` on `roUrlEvent` responses.
+
+## Functions & Subroutines
+
+- Keep functions short and single-purpose (under ~50 lines).
+- Avoid global functions when component-scoped functions suffice.
+- Pass data explicitly via parameters rather than relying on global scope or `m` for cross-component data.
+- Do not use `STOP` in production code — it halts execution and causes `EXIT_BRIGHTSCRIPT_STOP`.
+- Use `CreateObject()` rather than deprecated shorthand constructors.
+
+## Performance
+
+- Avoid string concatenation in loops; use `roString` or build arrays and join.
+- Cache frequently accessed node fields in local variables instead of repeated dot-access through the node tree.
+- Minimize use of `Eval()` — it recompiles code at runtime and is slow.
+- Use `roTimespan` for timing and profiling, not date math.
